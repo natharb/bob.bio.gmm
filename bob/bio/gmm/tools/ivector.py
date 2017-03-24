@@ -42,8 +42,15 @@ def ivector_estep(algorithm, iteration, indices, force=False, allow_missing_file
     data = [algorithm.read_gmm_stats(f) for f in training_list]
 
     # Perform the E-step
-    trainer.e_step(tv, data)
-
+    # Test if data is a GMMstats object or a list of GMMstats objects
+    if isinstance(algorithm, GMMSegment):
+      for g in data:
+        trainer.e_step(tv,g)
+        print('####### Trainer ######### \n')
+        print(trainer)
+    else:
+      trainer.e_step(tv, data)
+    
     # write results to file
     bob.io.base.create_directories_safe(os.path.dirname(stats_file))
     hdf5 = bob.io.base.HDF5File(stats_file, 'w')
@@ -53,7 +60,6 @@ def ivector_estep(algorithm, iteration, indices, force=False, allow_missing_file
     hdf5.set('acc_snormij', trainer.acc_snormij)
     hdf5.set('nsamples', indices[1] - indices[0])
     logger.info("IVector training: Wrote Stats file '%s'", stats_file)
-
 
 def _read_stats(filename):
   """Reads accumulated IVector statistics from file"""

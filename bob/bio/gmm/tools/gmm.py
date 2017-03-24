@@ -10,7 +10,7 @@ logger = logging.getLogger("bob.bio.gmm")
 from bob.bio.base.tools.FileSelector import FileSelector
 from bob.bio.base import utils, tools
 from .utils import read_feature
-
+from bob.bio.gmm.algorithm import GMMSegment
 
 def kmeans_initialize(algorithm, extractor, limit_data = None, force = False, allow_missing_files = False):
   """Initializes the K-Means training (non-parallel)."""
@@ -319,5 +319,9 @@ def gmm_project(algorithm, extractor, indices, force=False, allow_missing_files 
         projected = algorithm.project_ubm(feature)
         # write it
         bob.io.base.create_directories_safe(os.path.dirname(projected_file))
-        bob.bio.base.save(projected, projected_file)
 
+      # The test below is to distinguish between a GMMstats object (for the GMMSegment algorithm) and a list of GMMstats objects (for the ordinary GMM algorithm)
+      if isinstance(algorithm, GMMSegment):
+        GMMSegment.write_feature(algorithm, projected, projected_file)
+      else:
+        bob.bio.base.save(projected, projected_file)
