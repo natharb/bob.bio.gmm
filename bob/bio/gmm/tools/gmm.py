@@ -3,6 +3,7 @@ import bob.learn.em
 import shutil
 import numpy
 import os
+import functools
 
 import logging
 logger = logging.getLogger("bob.bio.gmm")
@@ -12,7 +13,7 @@ from bob.bio.base import utils, tools
 from .utils import read_feature
 from bob.bio.gmm.algorithm import GMMSegment
 
-def kmeans_initialize(algorithm, extractor, limit_data = None, force = False):
+def kmeans_initialize(algorithm, extractor, limit_data = None, force = False, allow_missing_files = False):
   """Initializes the K-Means training (non-parallel)."""
   fs = FileSelector.instance()
 
@@ -24,7 +25,9 @@ def kmeans_initialize(algorithm, extractor, limit_data = None, force = False):
     # read data
     logger.info("UBM training: initializing kmeans")
     training_list = utils.selected_elements(fs.training_list('extracted', 'train_projector'), limit_data)
-    data = numpy.vstack([read_feature(extractor, feature_file) for feature_file in training_list])
+    # read the features
+    reader = functools.partial(read_feature, extractor)
+    data = utils.vstack_features(reader, training_list, allow_missing_files=allow_missing_files)
 
     # Perform KMeans initialization
     kmeans_machine = bob.learn.em.KMeansMachine(algorithm.gaussians, data.shape[1])
@@ -35,7 +38,7 @@ def kmeans_initialize(algorithm, extractor, limit_data = None, force = False):
     logger.info("UBM training: saved initial KMeans machine to '%s'", output_file)
 
 
-def kmeans_estep(algorithm, extractor, iteration, indices, force=False):
+def kmeans_estep(algorithm, extractor, iteration, indices, force=False, allow_missing_files = False):
   """Performs a single E-step of the K-Means algorithm (parallel)"""
   if indices[0] >= indices[1]:
     return
@@ -55,8 +58,12 @@ def kmeans_estep(algorithm, extractor, iteration, indices, force=False):
 
     logger.info("UBM training: KMeans E-Step round %d from range(%d, %d)", iteration, *indices)
 
-    # read data
-    data = numpy.vstack([read_feature(extractor, training_list[index]) for index in range(indices[0], indices[1])])
+    # read the features
+    reader = functools.partial(read_feature, extractor)
+    data = utils.vstack_features(
+        reader,
+        (training_list[index] for index in range(indices[0], indices[1])),
+        allow_missing_files=allow_missing_files)
 
     # Performs the E-step
     trainer = algorithm.kmeans_trainer
@@ -95,7 +102,7 @@ def _accumulate(filenames):
     zeroeth += zeroeth_
     first += first_
     nsamples += nsamples_
-    dist += dist_  
+    dist += dist_
   return (zeroeth, first, nsamples, dist)
 
 def kmeans_mstep(algorithm, iteration, number_of_parallel_jobs, force=False, clean=False):
@@ -156,7 +163,7 @@ def kmeans_mstep(algorithm, iteration, number_of_parallel_jobs, force=False, cle
 
 
 
-def gmm_initialize(algorithm, extractor, limit_data = None, force = False):
+def gmm_initialize(algorithm, extractor, limit_data = None, force = False, allow_missing_files = False):
   """Initializes the GMM calculation with the result of the K-Means algorithm (non-parallel).
   This might require a lot of memory."""
   fs = FileSelector.instance()
@@ -168,9 +175,11 @@ def gmm_initialize(algorithm, extractor, limit_data = None, force = False):
   else:
     logger.info("UBM Training: Initializing GMM")
 
-    # read features
     training_list = utils.selected_elements(fs.training_list('extracted', 'train_projector'), limit_data)
-    data = numpy.vstack([read_feature(extractor, feature_file) for feature_file in training_list])
+
+    # read the features
+    reader = functools.partial(read_feature, extractor)
+    data = utils.vstack_features(reader, training_list, allow_missing_files=allow_missing_files)
 
     # get means and variances of kmeans result
     kmeans_machine = bob.learn.em.KMeansMachine(bob.io.base.HDF5File(fs.kmeans_file))
@@ -191,7 +200,7 @@ def gmm_initialize(algorithm, extractor, limit_data = None, force = False):
     logger.info("UBM Training: Wrote GMM file '%s'", output_file)
 
 
-def gmm_estep(algorithm, extractor, iteration, indices, force=False):
+def gmm_estep(algorithm, extractor, iteration, indices, force=False, allow_missing_files = False):
   """Performs a single E-step of the GMM training (parallel)."""
   if indices[0] >= indices[1]:
     return
@@ -209,8 +218,13 @@ def gmm_estep(algorithm, extractor, iteration, indices, force=False):
 
     logger.info("UBM training: GMM E-Step from range(%d, %d)", *indices)
 
-    # read data
-    data = numpy.vstack([read_feature(extractor, training_list[index]) for index in range(indices[0], indices[1])])
+    # read the features
+    reader = functools.partial(read_feature, extractor)
+    data = utils.vstack_features(
+        reader,
+        (training_list[index] for index in range(indices[0], indices[1]))
+        , allow_missing_files=allow_missing_files)
+
     trainer = algorithm.ubm_trainer
     trainer.initialize(gmm_machine, None)
 
@@ -282,7 +296,7 @@ def gmm_mstep(algorithm, iteration, number_of_parallel_jobs, force=False, clean=
     shutil.rmtree(old_dir)
 
 
-def gmm_project(algorithm, extractor, indices, force=False):
+def gmm_project(algorithm, extractor, indices, force=False, allow_missing_files = False):
   """Performs GMM projection"""
   fs = FileSelector.instance()
 
@@ -299,11 +313,11 @@ def gmm_project(algorithm, extractor, indices, force=False):
     projected_file = projected_files[i]
 
     if not utils.check_file(projected_file, force):
-      # load feature
-      feature = read_feature(extractor, feature_file)
-      # project feature
-      projected = algorithm.project_ubm(feature)
-      # write it
-      bob.io.base.create_directories_safe(os.path.dirname(projected_file))
-      
-      algorithm.write_feature(projected, projected_file)
+      if len(utils.filter_missing_files([feature_file], split_by_client=False, allow_missing_files=allow_missing_files)) > 0:
+        # load feature
+        feature = read_feature(extractor, feature_file)
+        # project feature
+        projected = algorithm.project_ubm(feature)
+        # write it
+        bob.io.base.create_directories_safe(os.path.dirname(projected_file))
+        algorithm.write_feature(projected, projected_file)

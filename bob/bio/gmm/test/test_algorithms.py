@@ -169,7 +169,9 @@ def test_gmm_segment():
     assert isinstance(projected, list)
   
     projected_ref = pkg_resources.resource_filename('bob.bio.gmm.test', 'data/gmmsegment_projected.hdf5')
-  
+    import ipdb; ipdb.set_trace()
+    gmm2.write_feature(projected, temp_file)
+
     gmm1.write_feature(projected, temp_file)
   
     hdf5fileref = bob.io.base.HDF5File(projected_ref, 'r')
