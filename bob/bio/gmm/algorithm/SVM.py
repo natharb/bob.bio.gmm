@@ -114,8 +114,34 @@ class SVMGMM (GMMRegular):
     hdf5.cd("/train_supervectors")
     for i in range(len(hdf5.keys())):
         self.negative_samples.append(hdf5.get("{0}".format(i)))
-   
+       
     return [self.ubm, self.negative_samples]
+
+
+  def enroll(self, feature_arrays, metadata=None):
+    """
+    Enrolling SVM with super vectors
+    """
+
+    # Setting the MAP Trainer
+    self.enroll_trainer = bob.learn.em.MAP_GMMTrainer(self.ubm, relevance_factor = self.relevance_factor, update_means = True, update_variances = False)
+
+    # Efficiency tip, let's pre-allocate the supervector arrays   
+    shape = (len(feature_arrays), self.ubm.mean_supervector.shape[0])
+    mean_supervectors = numpy.zeros(shape)
+   
+    for feature, i in zip(feature_arrays, range(len(feature_arrays))):
+      map_feature = self.enroll_gmm(feature)
+      mean_supervectors[i] = map_feature.mean_supervector
+
+
+    ############
+    #  TODO: DO SVM here
+    ############
+
+    import ipdb; ipdb.set_trace()
+    pass
+
 
 
   ######################################################
