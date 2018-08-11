@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 # vim: set fileencoding=utf-8 :
-# Manuel Guenther <Manuel.Guenther@idiap.ch>
+# Tiago de Freitas Pereira <tiago.pereira@idiap.ch>
 
 
 import bob.core
 import bob.io.base
 import bob.learn.em
-
+from bob.bio.base.tools.FileSelector import FileSelector
+import bob.learn.libsvm
 import numpy
 
 from bob.bio.base.algorithm import Algorithm
@@ -19,23 +20,68 @@ from .GMM import GMMRegular
 class SVMGMM (GMMRegular):
   """
   Trains 1 vs All SVM using the GMM supervectors
+
+
+  Parameters
+  ----------
+
+   machine_type: :py:class:`str`
+      A type of the SVM machine. Please check ``bob.learn.libsvm`` for
+      more details. Default: 'C_SVC'.
+
+   kernel_type: :py:class:`str`
+      A type of kerenel for the SVM machine. Please check ``bob.learn.libsvm``
+      for more details. Default: 'RBF'.
+
+   C: float
+     Regularization value for the C SVM
+
+   gamma: float
+     Gamma parameter for the RBF Kernel
+
+
   """
 
-  def __init__(self, **kwargs):
-    """Initializes the local UBM-GMM tool chain with the given file selector object"""
+  def __init__(self,           
+            machine_type='C_SVC',
+            kernel_type='RBF',
+            C=1.,
+            gamma=0.1,
 
-#    logger.warn("This class must be checked. Please verify that I didn't do any mistake here. I had to rename 'train_projector' into a 'train_enroller'!")
+          **kwargs):
+
     # initialize the UBMGMM base class
     GMMRegular.__init__(self, **kwargs)
     # register a different set of functions in the Tool base class
     Algorithm.__init__(self, requires_enroller_training = True, performs_projection = False)
+
+    self.machine_type = machine_type
+    self.kernel_type  = kernel_type
+    self.C            = C
+    self.gamma        = gamma
 
 
   #######################################################
   ################ UBM training #########################
 
   def train_enroller(self, train_features, enroller_file, metadata=None):
-    """Computes the Universal Background Model from the training ("world") data"""
+    """Computes the Universal Background Model from the training ("world") data"""    
+
+    ######################################
+    # TODO: This is a critical moment.
+    # With the next two lines of code we are breaking completely the isolation concept implemented
+    # in bob.bio.base by introducing database knowledge inside of the algorithm.
+    # This is a total HACK.
+    # In short, we just opened the gates from hell.
+    # Some demons may come out and the might terrorize innocent people.
+    # Do your prayers, you will need them.
+    # Only faith can save your soul.
+    # God forgive us
+    fs = FileSelector.instance()
+    #train_files = fs.training_objects('extracted', 'train_projector', arrange_by_client = True)
+    train_files = fs.database.training_files('train_projector', True)
+
+    #####
 
     # stacking all the features. TODO: This is super sub-optimal
     train_features_flatten = numpy.vstack([feature for client in train_features for feature in client])
@@ -74,7 +120,9 @@ class SVMGMM (GMMRegular):
     hdf5.create_group("/train_supervectors")
     hdf5.cd("/train_supervectors")
     for i in range(len(mean_supervectors)):
-        hdf5.set("{0}".format(i), mean_supervectors[i])
+        # Fetching and memorizing the client id, so we can use it during the enroll
+        class_id = train_files[i][0].client_id
+        hdf5.set("{0}".format(class_id), mean_supervectors[i])
     
 
   ######################################################
@@ -110,12 +158,12 @@ class SVMGMM (GMMRegular):
     self.ubm = bob.learn.em.GMMMachine(hdf5)
 
     # saving supervectors
-    self.negative_samples = []
+    self.negative_samples = dict()
     hdf5.cd("/train_supervectors")
-    for i in range(len(hdf5.keys())):
-        self.negative_samples.append(hdf5.get("{0}".format(i)))
+    for i in hdf5.keys():
+        self.negative_samples[i] = hdf5.get("{0}".format(i))
        
-    return [self.ubm, self.negative_samples]
+    #return [self.ubm, self.negative_samples]
 
 
   def enroll(self, feature_arrays, metadata=None):
@@ -139,9 +187,47 @@ class SVMGMM (GMMRegular):
     #  TODO: DO SVM here
     ############
 
-    import ipdb; ipdb.set_trace()
-    pass
+    # THIS IS ANOTHER HACK
+    # Stacking negative samples
 
+    all_negative_samples = None
+    class_id = metadata[0].client_id
+   
+    for k in self.negative_samples.keys():
+        # If it is from the same class, skip it
+        if class_id in k: 
+            continue
+
+        if all_negative_samples is None:
+            all_negative_samples = self.negative_samples[k]
+        else:
+            all_negative_samples = numpy.vstack((all_negative_samples, self.negative_samples[k]))
+  
+   
+    # NATH
+    # YOU CAN IMPLEMENT SOME DATA NORMALIZATION HERE
+    # SUPER RECOMMENDED
+
+    # initialize the SVM trainer:
+    trainer = bob.learn.libsvm.Trainer(machine_type=self.machine_type,
+                                       kernel_type=self.kernel_type,
+                                       probability=True)
+    trainer.gamma = self.gamma
+    trainer.cost = self.C
+    machine = trainer.train([mean_supervectors,
+                             all_negative_samples])
+
+    return machine
+
+
+  def read_model(self, model_file):
+    """Reads the model, which is a SVM  machine"""
+    
+    f = bob.io.base.HDF5File(model_file, 'r')
+    model = bob.learn.libsvm.Machine(f)
+    del f
+
+    return model
 
 
   ######################################################
@@ -150,11 +236,17 @@ class SVMGMM (GMMRegular):
     """Computes the score for the given model and the given probe.
     The score are Log-Likelihood.
     Therefore, the log of the likelihood ratio is obtained by computing the following difference."""
-
-    assert isinstance(model, bob.learn.em.GMMMachine)
+    assert isinstance(model, bob.learn.libsvm.Machine)
     self._check_feature(probe)
-    score = sum(model.log_likelihood(probe[i,:]) - self.ubm.log_likelihood(probe[i,:]) for i in range(probe.shape[0]))
-    return score/probe.shape[0]
+
+    # Generating supervector
+    self.enroll_trainer = bob.learn.em.MAP_GMMTrainer(self.ubm, relevance_factor = self.relevance_factor, update_means = True, update_variances = False)
+    map_feature = self.enroll_gmm(probe)
+    mean_supervectors = map_feature.mean_supervector
+
+    # Computing SVM score
+    return model.predict_class_and_scores(mean_supervectors)[1]
+
 
   def score_for_multiple_probes(self, model, probes):
     raise NotImplementedError("Implement Me!")
