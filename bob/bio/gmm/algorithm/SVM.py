@@ -200,8 +200,8 @@ class SVMGMM (GMMRegular):
    
     # Z-Normalization
     stacked = numpy.vstack((mean_supervectors,all_negative_samples))
-    mean_stacked = numpy.mean(stacked)
-    std_stacked = numpy.std(stacked)
+    mean_stacked = numpy.mean(stacked, axis = 0)
+    std_stacked = numpy.std(stacked, axis = 0)
 
     # initialize the SVM trainer:
     trainer = bob.learn.libsvm.Trainer(machine_type=self.machine_type,
