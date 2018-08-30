@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # vim: set fileencoding=utf-8 :
 # Tiago de Freitas Pereira <tiago.pereira@idiap.ch>
-
+# Nathalia Alves Rocha Batista <nathbapt@decom.fee.unicamp.br>
 
 import bob.core
 import bob.io.base
@@ -42,13 +42,7 @@ class SVMGMM (GMMRegular):
 
   """
 
-  def __init__(self,           
-            machine_type='C_SVC',
-            kernel_type='RBF',
-            C=1.,
-            gamma=0.1,
-
-          **kwargs):
+  def __init__(self,machine_type='C_SVC',kernel_type='RBF',C=1.,gamma=0.1,**kwargs):
 
     # initialize the UBMGMM base class
     GMMRegular.__init__(self, **kwargs)
@@ -107,7 +101,7 @@ class SVMGMM (GMMRegular):
             # Running MAP
             map_feature = self.enroll_gmm(feature)
             mean_supervectors[i][j] = map_feature.mean_supervector
-    
+
     # The enroller is composed by the UBM and all the training supervector samples
 
     # saving ubm
@@ -123,7 +117,7 @@ class SVMGMM (GMMRegular):
         # Fetching and memorizing the client id, so we can use it during the enroll
         class_id = train_files[i][0].client_id
         hdf5.set("{0}".format(class_id), mean_supervectors[i])
-    
+
 
   ######################################################
   ################ Feature comparison ##################
@@ -204,9 +198,10 @@ class SVMGMM (GMMRegular):
             all_negative_samples = numpy.vstack((all_negative_samples, self.negative_samples[k]))
   
    
-    # NATH
-    # YOU CAN IMPLEMENT SOME DATA NORMALIZATION HERE
-    # SUPER RECOMMENDED
+    # Z-Normalization
+    stacked = numpy.vstack((mean_supervectors,all_negative_samples))
+    mean_stacked = numpy.mean(stacked)
+    std_stacked = numpy.std(stacked)
 
     # initialize the SVM trainer:
     trainer = bob.learn.libsvm.Trainer(machine_type=self.machine_type,
@@ -214,8 +209,7 @@ class SVMGMM (GMMRegular):
                                        probability=True)
     trainer.gamma = self.gamma
     trainer.cost = self.C
-    machine = trainer.train([mean_supervectors,
-                             all_negative_samples])
+    machine = trainer.train([mean_supervectors, all_negative_samples], mean_stacked, std_stacked)
 
     return machine
 
