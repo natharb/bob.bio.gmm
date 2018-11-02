@@ -42,7 +42,7 @@ class SVMGMM (GMMRegular):
 
   """
 
-  def __init__(self,machine_type='C_SVC',kernel_type='RBF',C=1.,gamma=0.1,**kwargs):
+  def __init__(self,machine_type='C_SVC',kernel_type='LINEAR',C=1.,gamma=0.1,**kwargs):
 
     # initialize the UBMGMM base class
     GMMRegular.__init__(self, **kwargs)
@@ -52,7 +52,7 @@ class SVMGMM (GMMRegular):
     self.machine_type = machine_type
     self.kernel_type  = kernel_type
     self.C            = C
-    self.gamma        = gamma
+    #self.gamma        = gamma
 
 
   #######################################################
@@ -207,7 +207,7 @@ class SVMGMM (GMMRegular):
     trainer = bob.learn.libsvm.Trainer(machine_type=self.machine_type,
                                        kernel_type=self.kernel_type,
                                        probability=True)
-    trainer.gamma = self.gamma
+    #trainer.gamma = self.gamma
     trainer.cost = self.C
     machine = trainer.train([mean_supervectors, all_negative_samples], mean_stacked, std_stacked)
 

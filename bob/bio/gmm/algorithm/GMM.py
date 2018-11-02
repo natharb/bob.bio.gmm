@@ -23,8 +23,9 @@ class GMM (Algorithm):
       # parameters for the GMM
       number_of_gaussians,
       # parameters of UBM training
-      kmeans_training_iterations = 25,   # Maximum number of iterations for K-Means
-      gmm_training_iterations = 25,      # Maximum number of iterations for ML GMM Training
+      kmeans_training_iterations = 10,   # Maximum number of iterations for K-Means
+      gmm_training_iterations = 10
+,      # Maximum number of iterations for ML GMM Training
       training_threshold = 5e-4,         # Threshold to end the ML training
       variance_threshold = 5e-4,         # Minimum value that a variance can reach
       update_weights = True,
