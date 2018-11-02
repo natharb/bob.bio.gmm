@@ -42,7 +42,7 @@ class SVMGMM (GMMRegular):
 
   """
 
-  def __init__(self,machine_type='C_SVC',kernel_type='LINEAR',C=1.,gamma=0.1,**kwargs):
+  def __init__(self,machine_type='C_SVC',kernel_type='LINEAR',C=1,**kwargs):
 
     # initialize the UBMGMM base class
     GMMRegular.__init__(self, **kwargs)
